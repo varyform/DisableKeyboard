@@ -43,7 +43,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func disableKeyboard() {
         let eventMask =
             (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
-            | (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.systemDefined.rawValue)
+            | (1 << CGEventType.flagsChanged.rawValue)
 
         guard
             let tap = CGEvent.tapCreate(

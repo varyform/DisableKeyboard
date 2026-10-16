@@ -12,6 +12,12 @@ struct DisableKeyboardApp: App {
     }
 }
 
+// Media/function-row keys (brightness, volume, play/pause, backlight) arrive as
+// NX_SYSDEFINED events, which CGEventType has no case for.
+private let systemDefinedEventType: UInt32 = 14
+// NX_SUBTYPE_AUX_CONTROL_BUTTONS; other subtypes (e.g. 7, aux mouse buttons) must pass.
+private let auxControlButtonsSubtype: Int16 = 8
+
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var isKeyboardDisabled = false
@@ -44,6 +50,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let eventMask =
             (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
             | (1 << CGEventType.flagsChanged.rawValue)
+            | (1 << systemDefinedEventType)
 
         guard
             let tap = CGEvent.tapCreate(
@@ -52,6 +59,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 options: .defaultTap,
                 eventsOfInterest: CGEventMask(eventMask),
                 callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
+                    if type.rawValue == systemDefinedEventType,
+                        NSEvent(cgEvent: event)?.subtype.rawValue != auxControlButtonsSubtype
+                    {
+                        return Unmanaged.passUnretained(event)
+                    }
                     return nil
                 },
                 userInfo: nil

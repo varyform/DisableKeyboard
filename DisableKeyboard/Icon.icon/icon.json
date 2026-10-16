@@ -1,15 +1,31 @@
 {
   "fill" : {
-    "automatic-gradient" : "extended-srgb:0.00000,0.53333,1.00000,1.00000"
+    "automatic-gradient" : "extended-srgb:0.20000,0.24000,0.62000,1.00000"
   },
   "groups" : [
     {
       "layers" : [
         {
-          "blend-mode" : "normal",
           "glass" : true,
-          "image-name" : "Generated Image November 12, 2025 - 11_06AM.png",
-          "name" : "Generated Image November 12, 2025 - 11_06AM"
+          "image-name" : "slash.svg",
+          "name" : "slash"
+        }
+      ],
+      "shadow" : {
+        "kind" : "layer-color",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.5
+      }
+    },
+    {
+      "layers" : [
+        {
+          "glass" : true,
+          "image-name" : "keyboard.svg",
+          "name" : "keyboard"
         }
       ],
       "shadow" : {
@@ -18,7 +34,7 @@
       },
       "translucency" : {
         "enabled" : true,
-        "value" : 0.5
+        "value" : 0.4
       }
     }
   ],

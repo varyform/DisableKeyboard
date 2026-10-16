@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Rebuilds and relaunches the app, quitting any running copy first.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+bin/build
+pkill -x DisableKeyboard || true
+open build/DisableKeyboard.app

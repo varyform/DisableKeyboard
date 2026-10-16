@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Builds the Swift package and wraps the binary in build/DisableKeyboard.app.
+# swift build, not xcodebuild: xcodebuild treats packages as multiplatform and always warns
+# about empty supported platforms and ambiguous macOS destinations.
+# CONFIGURATION=release bin/build for an optimized build;
+# CODESIGN_IDENTITY overrides the signing identity ("-" for ad-hoc).
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+NAME=DisableKeyboard
+BUNDLE_ID=varyform.DisableKeyboard
+CONFIGURATION=${CONFIGURATION:-debug}
+# A stable identity keeps the Accessibility grant across rebuilds; ad-hoc signatures reset it.
+CODESIGN_IDENTITY=${CODESIGN_IDENTITY:-Apple Development}
+
+SWIFTPM=(swift build --configuration "$CONFIGURATION" --scratch-path build/swiftpm)
+APP=build/$NAME.app
+
+"${SWIFTPM[@]}" --quiet
+
+rm -rf "$APP"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+cp "$("${SWIFTPM[@]}" --show-bin-path)/$NAME" "$APP/Contents/MacOS/$NAME"
+# The linker ad-hoc signs the binary; drop that so the bundle signature below starts clean.
+codesign --remove-signature "$APP/Contents/MacOS/$NAME"
+
+cat > "$APP/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleExecutable</key><string>$NAME</string>
+  <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
+  <key>CFBundleName</key><string>$NAME</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>26.0</string>
+  <key>NSPrincipalClass</key><string>NSApplication</string>
+</dict>
+</plist>
+PLIST
+
+ICON_PLIST=$(mktemp -t "$NAME-icon").plist
+xcrun actool "$NAME/Icon.icon" \
+  --compile "$APP/Contents/Resources" \
+  --platform macosx \
+  --minimum-deployment-target 26.0 \
+  --app-icon Icon \
+  --include-all-app-icons \
+  --output-partial-info-plist "$ICON_PLIST" \
+  --output-format human-readable-text --notices --warnings --errors >/dev/null
+/usr/libexec/PlistBuddy -c "Merge $ICON_PLIST" "$APP/Contents/Info.plist" >/dev/null
+rm -f "$ICON_PLIST"
+
+codesign --force --options runtime --timestamp=none --sign "$CODESIGN_IDENTITY" "$APP"
+
+echo "Built $APP"

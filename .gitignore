@@ -33,6 +33,7 @@ Pods/
 Carthage/Build
 
 # Swift Package Manager
+.build/
 .swiftpm/
 *.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
 

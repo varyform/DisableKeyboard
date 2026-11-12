@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1 — 2026-11-12
+
 First release.
 
 - Lock and unlock the keyboard from the menu bar icon.

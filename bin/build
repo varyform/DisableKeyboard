@@ -3,7 +3,8 @@
 # swift build, not xcodebuild: xcodebuild treats packages as multiplatform and always warns
 # about empty supported platforms and ambiguous macOS destinations.
 # CONFIGURATION=release bin/build for an optimized build;
-# CODESIGN_IDENTITY overrides the signing identity ("-" for ad-hoc).
+# CODESIGN_IDENTITY overrides the signing identity ("-" for ad-hoc); VERSION and BUILD_NUMBER
+# stamp the bundle (bin/release sets them; by default, the latest tag and the commit count).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -13,6 +14,12 @@ BUNDLE_ID=varyform.DisableKeyboard
 CONFIGURATION=${CONFIGURATION:-debug}
 # A stable identity keeps the Accessibility grant across rebuilds; ad-hoc signatures reset it.
 CODESIGN_IDENTITY=${CODESIGN_IDENTITY:-Apple Development}
+VERSION=${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)}
+VERSION=${VERSION:-0.0}
+BUILD_NUMBER=${BUILD_NUMBER:-$(git rev-list --count HEAD)}
+# Notarization requires a secure timestamp; local builds skip the round trip to Apple.
+TIMESTAMP=--timestamp=none
+[[ "$CODESIGN_IDENTITY" == "Developer ID Application"* ]] && TIMESTAMP=--timestamp
 
 SWIFTPM=(swift build --configuration "$CONFIGURATION" --scratch-path build/swiftpm)
 APP=build/$NAME.app
@@ -35,8 +42,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleName</key><string>$NAME</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
+  <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
   <key>LSMinimumSystemVersion</key><string>26.0</string>
   <key>NSPrincipalClass</key><string>NSApplication</string>
 </dict>
@@ -55,6 +62,6 @@ xcrun actool "$NAME/Icon.icon" \
 /usr/libexec/PlistBuddy -c "Merge $ICON_PLIST" "$APP/Contents/Info.plist" >/dev/null
 rm -f "$ICON_PLIST"
 
-codesign --force --options runtime --timestamp=none --sign "$CODESIGN_IDENTITY" "$APP"
+codesign --force --options runtime "$TIMESTAMP" --sign "$CODESIGN_IDENTITY" "$APP"
 
 echo "Built $APP"

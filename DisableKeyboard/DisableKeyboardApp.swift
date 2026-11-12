@@ -1,3 +1,4 @@
+import Carbon.HIToolbox
 import IOKit
 import SwiftUI
 
@@ -18,6 +19,13 @@ private let systemDefinedEventType: UInt32 = 14
 // NX_SUBTYPE_AUX_CONTROL_BUTTONS; other subtypes (e.g. 7, aux mouse buttons) must pass.
 private let auxControlButtonsSubtype: Int16 = 8
 
+// ⌃⌥⌘K toggles the lock. Matched inside the event tap rather than registered as a hotkey: the
+// tap sees keystrokes first, so this still works while everything else is swallowed — e.g. when
+// the display is off and the menu bar can't be clicked.
+private let toggleKeyCode = Int64(kVK_ANSI_K)
+private let toggleModifiers: CGEventFlags = [.maskControl, .maskAlternate, .maskCommand]
+private let checkedModifiers: CGEventFlags = toggleModifiers.union(.maskShift)
+
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var isKeyboardDisabled = false
@@ -29,24 +37,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem?.button {
             button.image = NSImage(
                 systemSymbolName: "keyboard", accessibilityDescription: "Keyboard Toggle")
+            button.toolTip = "Toggle keyboard (⌃⌥⌘K)"
             button.action = #selector(toggleKeyboard)
             button.target = self
         }
 
+        // Installed up front so the shortcut can lock the keyboard too, not only unlock it.
+        installEventTap()
         updateIcon()
     }
 
     @objc func toggleKeyboard() {
-        if isKeyboardDisabled {
-            enableKeyboard()
-        } else {
-            disableKeyboard()
+        guard eventTap != nil || installEventTap() else {
+            showAccessibilityAlert()
+            return
         }
         isKeyboardDisabled.toggle()
         updateIcon()
     }
 
-    func disableKeyboard() {
+    @discardableResult
+    func installEventTap() -> Bool {
         let eventMask =
             (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
             | (1 << CGEventType.flagsChanged.rawValue)
@@ -59,32 +70,52 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 options: .defaultTap,
                 eventsOfInterest: CGEventMask(eventMask),
                 callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
-                    if type.rawValue == systemDefinedEventType,
-                        NSEvent(cgEvent: event)?.subtype.rawValue != auxControlButtonsSubtype
-                    {
-                        return Unmanaged.passUnretained(event)
-                    }
-                    return nil
+                    let delegate = Unmanaged<AppDelegate>.fromOpaque(refcon!).takeUnretainedValue()
+                    // The tap's run loop source is on the main run loop.
+                    return MainActor.assumeIsolated { delegate.handle(type, event) }
                 },
-                userInfo: nil
+                userInfo: Unmanaged.passUnretained(self).toOpaque()
             )
         else {
-            showAccessibilityAlert()
-            return
+            return false
         }
 
         eventTap = tap
         let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
+        return true
     }
 
-    func enableKeyboard() {
-        if let tap = eventTap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-            CFMachPortInvalidate(tap)
-            eventTap = nil
+    func handle(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
+        let passThrough = Unmanaged.passUnretained(event)
+
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            // A permanent tap must survive these, or the shortcut silently stops working.
+            if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: true) }
+            return passThrough
         }
+
+        if type == .keyDown || type == .keyUp, isToggleShortcut(event) {
+            if type == .keyDown, event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
+                toggleKeyboard()
+            }
+            return nil
+        }
+
+        guard isKeyboardDisabled else { return passThrough }
+
+        if type.rawValue == systemDefinedEventType,
+            NSEvent(cgEvent: event)?.subtype.rawValue != auxControlButtonsSubtype
+        {
+            return passThrough
+        }
+        return nil
+    }
+
+    func isToggleShortcut(_ event: CGEvent) -> Bool {
+        event.getIntegerValueField(.keyboardEventKeycode) == toggleKeyCode
+            && event.flags.intersection(checkedModifiers) == toggleModifiers
     }
 
     func updateIcon() {
